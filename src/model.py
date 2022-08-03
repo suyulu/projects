@@ -67,7 +67,8 @@ class GRUNet(nn.Module):
         
     def forward(self, x):
         out = self.gru(x)
-        out = self.fc(self.relu(out))
+        out = self.fc(out)
+        out = torch.sigmoid(out)
         return out
     
     def init_hidden(self, batch_size):
@@ -88,7 +89,8 @@ class LSTMNet(nn.Module):
         
     def forward(self, x):
         out = self.lstm(x)
-        out = self.fc(self.relu(out))
+        out = self.fc(out)
+        out = torch.sigmoid(out)
         return out
     
     def init_hidden(self, batch_size):
