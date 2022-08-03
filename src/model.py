@@ -65,7 +65,7 @@ class GRUNet(nn.Module):
         self.fc = nn.Linear(hidden_dim, output_dim)
         self.relu = nn.ReLU()
         
-    def forward(self, x, h):
+    def forward(self, x):
         out = self.gru(x)
         out = self.fc(self.relu(out))
         return out
