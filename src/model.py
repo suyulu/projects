@@ -66,9 +66,9 @@ class GRUNet(nn.Module):
         self.relu = nn.ReLU()
         
     def forward(self, x, h):
-        out, h = self.gru(x, h)
-        out = self.fc(self.relu(out[:,-1]))
-        return out, h
+        out = self.gru(x)
+        out = self.fc(self.relu(out))
+        return out
     
     def init_hidden(self, batch_size):
         weight = next(self.parameters()).data
@@ -86,10 +86,10 @@ class LSTMNet(nn.Module):
         self.fc = nn.Linear(hidden_dim, output_dim)
         self.relu = nn.ReLU()
         
-    def forward(self, x, h):
-        out, h = self.lstm(x, h)
-        out = self.fc(self.relu(out[:,-1]))
-        return out, h
+    def forward(self, x):
+        out = self.lstm(x)
+        out = self.fc(self.relu(out))
+        return out
     
     def init_hidden(self, batch_size):
         weight = next(self.parameters()).data
