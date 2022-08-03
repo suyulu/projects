@@ -124,7 +124,7 @@ from sklearn import metrics
 from data import InsiderTrades
 from tqdm import tqdm
 
-from model import Model, FocalLoss
+from model import Model, FocalLoss, GRUNet, LSTMNet
 
 def train(model,optimizer,criterion,data_loader,device,clip=1):
     model.train()
@@ -259,7 +259,7 @@ def run_one_year(year, fw: SummaryWriter):
 
     # criterion = nn.BCELoss()
     criterion = FocalLoss()
-    model = Model(55, 128, 1, 2, device)
+    model = GRUNet(58, 128, 1, 2, device)
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters())
     EPOCHS = 20

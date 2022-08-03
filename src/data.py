@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data.dataset import Dataset
+import datetime
+from dateutil.relativedelta import relativedelta
 
 class InsiderTrades(Dataset):
     def __init__(self, split, df, year, dbx=None, dby=None):
@@ -46,6 +48,45 @@ class InsiderTrades(Dataset):
         personid = cur_item['personid']
         seq = self.data[self.data['personid'] == personid]
         seq = seq[seq['TRANDATE'] <= cur_date]
+        
+        
+        '''
+        Adjust gap and profit_rdg_future
+        
+        针对这两个变量。假定一个人有三笔交易，那么第一笔交易都为空。第二笔交易，如果距离第一笔交易的间隔超过了6个月，
+        那么第二笔交易的这两个变量用第一笔交易的两个变量来填充。如果交易间隔短语6个月，就用0填充。
+        
+        '''
+        seq['gap_lag'] = seq['gap_norm'].shift(1)
+        seq['profit_rdq_future_lag'] = seq['profit_rdq_future_norm'].shift(1)        
+        seq['trandate_lag'] = seq['TRANDATE'].shift(1)
+        
+        seq['trandate_6mago'] = seq['TRANDATE'].map(lambda x:datetime.datetime(year=int(x/10000),\
+                                                   month=int((x%10000)/100),\
+                                                   day=int(((x%10000)%100)))+ relativedelta(months=-6))
+        
+        seq['trandate_6mago_int'] = seq['trandate_6mago'].map(lambda x: (10000*x.year + 100*x.month + x.day))
+        
+        seq.loc[seq['trandate_lag'] > seq['trandate_6mago_int'], 'gap_lag'] = 0
+        seq.loc[seq['trandate_lag'] > seq['trandate_6mago_int'], 'profit_rdq_future_lag'] = 0
+
+        seq = seq.drop(['gap_norm', 'profit_rdq_future_norm', \
+                            'trandate_lag', 'trandate_6mago', \
+                            'trandate_6mago_int'], axis=1)
+            
+        seq = seq.rename(columns={
+                    "gap_lag":"gap_norm",
+                    "profit_rdq_future_lag":"profit_rdq_future_norm"})
+       
+        seq["gap_norm"] = seq["gap_norm"].fillna(0)
+        seq["profit_rdq_future_norm"] = seq["profit_rdq_future_norm"].fillna(0)
+            
+        
+        
+        
+        
+        
+        
         feat = seq.columns.tolist()[3:]
         feat.remove('label')
         x = seq[feat].values  
@@ -62,7 +103,7 @@ class InsiderTrades(Dataset):
             d_l = x.tolist()[len(x)-self.seq_len: len(x)]
 		
         x = np.array(d_l)
-        assert x.shape[-1] == 55
+        assert x.shape[-1] == 58
         y = seq['label'].values[-1] 
         return x, y, cur_idx
 
@@ -82,7 +123,7 @@ class InsiderTrades(Dataset):
         #         'profit_rdq_future', 'total_vol',
         #         'adj_t', 'adj_q5Return']
         dimensions = ['index','personid', 'TRANDATE', 'shares', 'price',
-       'year',
+       'year', 'trancode', 'gap', 'profit_rdq_future', ### add three variables
        'total_vol', 'ceo', 'cfo', 'chairman', 'director', 'officers',
        'shareholders', 'insidertenure', 'FirmSize', 'Dummy_FirmSize',
        'BidAskSpread', 'Dummy_BidAskSpread', 'RDExpenditures',
@@ -124,7 +165,9 @@ class InsiderTrades(Dataset):
         
         MyData = MyData.dropna()
         
-        regular = ['shares', 'price', 'total_vol', 'FirmSize', 'TradeTimingEarning', 'AnalystCoverage', 'TradeTimingGuidance', 'StockTurnover',  'BidAskSpread', 'RecentEarningsInformation']
+        regular = ['gap', 'profit_rdq_future', 'shares', 'price', 'total_vol', \
+                   'FirmSize', 'TradeTimingEarning', 'AnalystCoverage',\
+                   'TradeTimingGuidance', 'StockTurnover',  'BidAskSpread', 'RecentEarningsInformation']
         
         
         data_ = MyData.copy()
@@ -160,10 +203,10 @@ class InsiderTrades(Dataset):
         print('standard complete!{}'.format(MyData[reg +'_norm'].mean()))
         self.stats_summary(MyData)
         print(MyData.shape)
-        assert MyData.shape[1] == 59
+        assert MyData.shape[1] == 62
         MyData = MyData.sort_values('TRANDATE', ascending=True)
         #print(MyData.shape)
-        print("data has been loaded =========================================================================")
+        print("================================= data has been loaded =================================")
         return MyData
 	
 	
@@ -182,8 +225,49 @@ class InsiderTrades(Dataset):
         grouped = self.data.groupby('personid')
 
         for name, group in grouped:
+            '''
+            Adjust gap and profit_rdg_future
+            
+            针对这两个变量。假定一个人有三笔交易，那么第一笔交易都为空。第二笔交易，如果距离第一笔交易的间隔超过了6个月，
+            那么第二笔交易的这两个变量用第一笔交易的两个变量来填充。如果交易间隔短语6个月，就用0填充。
+            
+            '''
+            group['gap_lag'] = group['gap_norm'].shift(1)
+            group['profit_rdq_future_lag'] = group['profit_rdq_future_norm'].shift(1)            
+            group['trandate_lag'] = group['TRANDATE'].shift(1)
+            
+            group['trandate_6mago'] = group['TRANDATE'].map(lambda x:datetime.datetime(year=int(x/10000),\
+                                                       month=int((x%10000)/100),\
+                                                       day=int(((x%10000)%100)))+ relativedelta(months=-6))
+            
+            group['trandate_6mago_int'] = group['trandate_6mago'].map(lambda x: (10000*x.year + 100*x.month + x.day))
+            
+            group.loc[group['trandate_lag'] > group['trandate_6mago_int'], 'gap_lag'] = 0
+            group.loc[group['trandate_lag'] > group['trandate_6mago_int'], 'profit_rdq_future_lag'] = 0
+
+            group = group.drop(['gap_norm', 'profit_rdq_future_norm', \
+                                'trandate_lag', 'trandate_6mago', \
+                                'trandate_6mago_int'], axis=1)
+                
+            group = group.rename(columns={
+                        "gap_lag":"gap_norm",
+                        "profit_rdq_future_lag":"profit_rdq_future_norm"})
+           
+            group["gap_norm"] = group["gap_norm"].fillna(0)
+            group["profit_rdq_future_norm"] = group["profit_rdq_future_norm"].fillna(0)
+            
+            
+            '''
+                rolling window 
+                
+                add obs in rolling window method
+            
+            '''
+            
+            
             pad_size = seq_len - len(group)
             if pad_size > 0 :
+                
                 slice_ = [0]*len(col)
                 for i in range(pad_size):
                     d_l.append(slice_)            
@@ -208,11 +292,11 @@ class InsiderTrades(Dataset):
 
         dimensions = col[3:]
         dimensions.remove('label')
-        assert len(dimensions) == 55
+        assert len(dimensions) == 58
         x = d[dimensions].values
         print(len_after_padding / seq_len)
         print(len_after_padding)
-        x = x.reshape((int(len_after_padding / seq_len), seq_len, 55))
+        x = x.reshape((int(len_after_padding / seq_len), seq_len, 58))
         y = d['label'].values
         y = y.reshape((int(len_after_padding / seq_len), seq_len))
         np.save("data/" + self.split + str(self.year) + "_x.npy", x)
@@ -252,6 +336,12 @@ class InsiderTrades(Dataset):
         
     
         print('\n')
+        
+        
+        
+    def to_integer(dt_time):
+        return 10000*dt_time.year + 100*dt_time.month + dt_time.day
+
 
 def main():
     ##x_train = np.load("data/train_x.npy")
