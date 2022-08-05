@@ -43,8 +43,6 @@ class FocalLoss(torch.nn.Module):
       loss = torch.sum(loss)
     return loss
 
-
-
 # torch.cuda.is_available() checks and returns a Boolean True if a GPU is available, else it'll return False
 is_cuda = torch.cuda.is_available()
 
@@ -57,44 +55,43 @@ else:
 class GRUNet(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, n_layers, device, drop_prob=0.2):
         super(GRUNet, self).__init__()
-        self.device = device
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
+        self.device = device
         
         self.gru = nn.GRU(input_dim, hidden_dim, n_layers, batch_first=True, dropout=drop_prob)
         self.fc = nn.Linear(hidden_dim, output_dim)
-        self.relu = nn.ReLU()
         
     def forward(self, x):
-        out = self.gru(x)
+        assert torch.isnan(x).any() == False
+        out, h = self.gru(x)
         out = self.fc(out)
         out = torch.sigmoid(out)
         return out
     
-    def init_hidden(self, batch_size):
-        weight = next(self.parameters()).data
-        hidden = weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device)
-        return hidden
+    # def init_hidden(self, batch_size):
+    #     weight = next(self.parameters()).data
+    #     hidden = weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device)
+    #     return hidden
 
-class LSTMNet(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, n_layers, drop_prob=0.2):
-        super(LSTMNet, self).__init__()
-        self.device = device
+class RNNNet(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, n_layers, device, drop_prob=0.2):
+        super(Model, self).__init__()
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
+        self.device = device
         
-        self.lstm = nn.LSTM(input_dim, hidden_dim, n_layers, batch_first=True, dropout=drop_prob)
+        self.rnn = nn.RNN(input_dim, hidden_dim, n_layers, batch_first=True, dropout=drop_prob)
         self.fc = nn.Linear(hidden_dim, output_dim)
-        self.relu = nn.ReLU()
         
     def forward(self, x):
-        out = self.lstm(x)
+        out, h = self.rnn(x)
         out = self.fc(out)
         out = torch.sigmoid(out)
         return out
     
-    def init_hidden(self, batch_size):
-        weight = next(self.parameters()).data
-        hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device),
-                  weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device))
-        return hidden
+    # def init_hidden(self, batch_size):
+    #     weight = next(self.parameters()).data
+    #     hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device),
+    #               weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device))
+    #     return hidden
