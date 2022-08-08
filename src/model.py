@@ -76,7 +76,7 @@ class GRUNet(nn.Module):
 
 class RNNNet(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, n_layers, device, drop_prob=0.2):
-        super(Model, self).__init__()
+        super(RNNNet, self).__init__()
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
         self.device = device
