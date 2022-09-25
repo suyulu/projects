@@ -7,12 +7,13 @@ import datetime
 from dateutil.relativedelta import relativedelta
 
 class InsiderTrades(Dataset):
-    def __init__(self, split, df, year, dbx=None, dby=None):
+    def __init__(self, split, df, year, dbx=None, dby=None, args=None):
         self.split = split
         self.df = df
         self.year = year
         self.dbx = dbx
         self.dby = dby
+        self.threshold = args.threshold
         self.seq_len = 100
 
         if self.split == 'train' and (self.dbx is None or self.dby is None):
@@ -103,7 +104,7 @@ class InsiderTrades(Dataset):
             d_l = x.tolist()[len(x)-self.seq_len: len(x)]
 		
         x = np.array(d_l)
-        assert x.shape[-1] == 58
+        assert x.shape[-1] == 128
         y = seq['label'].values[-1] 
         return x, y, cur_idx
 
@@ -137,7 +138,7 @@ class InsiderTrades(Dataset):
        'RecentAbnormalStockReturns', 'Dummy_RecentAbnormalStockReturns',
        'RecentEarningsInformation', 'Dummy_RecentEarningsInformation',
        'QualityOfInternalControl', 'Dummy_QualityOfInternalControl',
-       'IndustryMembership', 'sich', 'dummy_sich', 'GrowthInSales',
+       'IndustryMembership', 'dummy_sich', 'GrowthInSales',
        'Dummy_GrowthInSales', 'StockReturnSkewness',
        'Dummy_StockReturnSkewness', 'StockReturnVolatility',
        'Dummy_StockReturnVolatility', 'StockTurnover', 'Dummy_StockTurnover',
@@ -147,13 +148,23 @@ class InsiderTrades(Dataset):
         self.df['index'] = self.df.index
         self.df['year'] = self.df['TRANDATE'].map(lambda x: int(x.split('/')[0]))
         
+        self.df['sich_1'] = self.df['sich'] #//100
+        dummy_sich = pd.get_dummies(self.df['sich_1'])
+        sic2 = list(dummy_sich.columns)
+        sic2.remove(0.0)
+        self.df = pd.concat([self.df, dummy_sich], axis = 1)
+        print(self.df.columns)
         
+		
+        dimensions.extend(sic2)
+		
+		
         MyData = pd.DataFrame(data=self.df, columns=dimensions)
         #MyData['year'] = MyData['TRANDATE'].map(lambda x: int(x.split('/')[0]))
         MyData['TRANDATE'] = MyData['TRANDATE'].map(lambda x: int(x.replace('/', '')))
 
         def threshold(x):
-            if x > 1.66:
+            if x > self.threshold:
                 return 1
             else:
                 return 0
@@ -203,7 +214,7 @@ class InsiderTrades(Dataset):
         print('standard complete!{}'.format(MyData[reg +'_norm'].mean()))
         self.stats_summary(MyData)
         print(MyData.shape)
-        assert MyData.shape[1] == 62
+        assert MyData.shape[1] == 132
         MyData = MyData.sort_values('TRANDATE', ascending=True)
         #print(MyData.shape)
         print("================================= data has been loaded =================================")
@@ -292,11 +303,14 @@ class InsiderTrades(Dataset):
 
         dimensions = col[3:]
         dimensions.remove('label')
-        assert len(dimensions) == 58
+        print(dimensions)
+        print(len(dimensions)) # the dimensions has "year" variable
+        assert len(dimensions) == 128
+        
         x = d[dimensions].values
         print(len_after_padding / seq_len)
         print(len_after_padding)
-        x = x.reshape((int(len_after_padding / seq_len), seq_len, 58))
+        x = x.reshape((int(len_after_padding / seq_len), seq_len, 128))
         y = d['label'].values
         y = y.reshape((int(len_after_padding / seq_len), seq_len))
         np.save("data/" + self.split + str(self.year) + "_x.npy", x)

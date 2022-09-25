@@ -4,8 +4,6 @@ Created on Sun Apr 17 18:40:47 2022
 
 @author: 18142
 """
-
-
 import pandas as pd
 import math
 import time
@@ -13,108 +11,6 @@ import os
 import numpy as np
 import sklearn
 from torch.utils.tensorboard import SummaryWriter
-
-
-def load_data(path):
-    data = pd.read_csv(path, encoding='utf-8')
-
-    dimensions = ['PERSONID',
-                  'TRANDATE', 'CEO', 'CFO', 'CHAIRMAN', 'DIRECTOR', 'Officers',
-                  'shareholders', 'TRANCODE', 'SHARES', 'price', 'gap',
-                  'profit_rdq_future', 'total_vol',
-                  'adj_t', 'adj_q5Return']
-    # label = ['adj_t','adj_q5Return']
-
-    MyData = pd.DataFrame(data=data, columns=dimensions)
-    MyData['TRANDATE'] = MyData['TRANDATE'].map(lambda x: int(x.replace('/', '')))
-
-    def threshold(x):
-        if x > 1.6:
-            return 1
-        else:
-            return 0
-
-    MyData['label'] = MyData['adj_t'].map(threshold)
-    MyData = MyData.drop(['adj_t', 'adj_q5Return'], axis=1)
-    assert MyData.shape == (1287036, 15)
-    MyData = MyData.dropna()
-    #regular = ['SHARES', 'price', 'gap', 'profit_rdq_future', 'total_vol']
-
-    # max_min_scaler = lambda x: (x - np.min(x)) / (np.max(x) - np.min(x))
-    #std_scaler = lambda x: (x - np.mean(x)) / np.std(x)
-    #data_ = MyData.copy()
-    #for i in regular:
-    #    MyData[i + '_norm'] = data_[[i]].apply(std_scaler)
-    #    # print('?')
-    #print('standard complete!')
-    #MyData = MyData.drop(regular, axis=1)
-    assert MyData.shape[1]== 15
-    MyData = MyData.sort_values('TRANDATE', ascending=True)
-    # MyData.to_csv('./final_data.csv')
-    return MyData
-
-
-def group_p(data, seq_len, mode="train"):
-    '''
-    :param data:
-    :param seq_len:
-    :param mode:
-    :return: numpy.ndarray, x,y
-    '''
-    d_l = data.values.tolist()
-    col = data.columns.tolist()
-    grouped = data.groupby('PERSONID')
-
-    for name, group in grouped:
-        pad_size = seq_len - len(group) % seq_len
-        if pad_size != seq_len:
-            slice_ = group.values.tolist()[-1]
-            for i in range(pad_size):
-                d_l.append(slice_)
-
-    len_after_padding = len(d_l)
-
-    assert len_after_padding % seq_len == 0
-    '''
-    col = ['PERSONID','TRANDATE', 
-           'CEO', 'CFO', 'CHAIRMAN', 'DIRECTOR', 'Officers',
-           'shareholders', 'TRANCODE', 'SHARES', 'price', 'gap',
-           'profit_rdq_future',  'total_vol','label']
-    '''
-    d = pd.DataFrame(d_l, columns=col)
-    d = d.sort_values(['PERSONID', 'TRANDATE'], ascending=[True, True])
-    # 实现效果先按照PERSONID排序，后按照TRANDATE排序
-
-    dimensions = col[2:]
-    dimensions.remove('label')
-    assert len(dimensions) == 12
-    x = d[dimensions].values
-    print(len_after_padding / seq_len)
-    print(len_after_padding)
-    x = x.reshape((int(len_after_padding / seq_len), seq_len, 12))
-    y = d['label'].values
-    y = y.reshape((int(len_after_padding / seq_len), seq_len))
-    np.save("data/" + mode + "_x.npy", x)
-    np.save("data/" + mode + "_y.npy", y)
-    return x, y
-
-
-
-def train_test(data):
-    train = data[data['TRANDATE'] < 20190101]
-    test = data[data['TRANDATE'] >= 20190101]
-    return train, test
-
-
-
-def prepare_data():
-    path = "20220422_all_insider_trades.csv"
-    data = load_data(path)
-    train, test = train_test(data)
-    x_train, y_train = group_p(train, 100)
-    x_test, y_test = group_p(test, 100,"test")
-
-
 from torch.utils.data import TensorDataset
 import torch
 import torch.nn  as nn
@@ -122,35 +18,51 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn import metrics
 from data import InsiderTrades
-from tqdm import tqdm
+from model import Model, FocalLoss
+import argparse
+import numpy as np
+import matplotlib.pyplot as plt
+import itertools
 
-from model import Model, FocalLoss, GRUNet, LSTMNet
 
-def train(model,optimizer,criterion,data_loader,device,clip=1):
+np.random.seed(1425)
+
+
+def train(model,optimizer,scheduler,criterion,data_loader,device,epoch,args,clip=1):
     model.train()
     loss_total = 0
     auc = []
+    step_total = len(data_loader)
     # for x,y in tqdm(data_loader, desc='Train'):
-    for x,y in data_loader:
+    for step, (x, y) in enumerate(data_loader):
         optimizer.zero_grad()
         x = x.to(device).float()
         y = y.to(device).float()
-        #--------old
-        # y = y[:,-1]
-        # new
         y = y.reshape(-1)   # (100 * b,)
         pred = model(x) # (b, 100, 1)
-        pred = pred.squeeze(-1).reshape(-1)
-        #pred [b*seq]
-        # try:
+        pred = pred.squeeze(-1).reshape(-1) # (b*100*1)
+        
         loss = criterion(pred,y)
-        # except:
-        #     continue
         loss_total += loss.item()
         loss.backward()
-        auc.append(metrics.roc_auc_score(y.detach().cpu().int().numpy(), pred.detach().cpu().numpy()))
+        auc_step = metrics.roc_auc_score(y.detach().cpu().int().numpy(), pred.detach().cpu().numpy())
+        auc.append(auc_step)
+
+        if step % args.print_freq == 0:
+            #plt.hist(list(pred.cpu().detach().numpy()))
+            #plt.savefig(f"{args.res_dir}/figures/pred_distribution_epoch{epoch}_step{step}.png")
+            
+
+            statistics_dict = {}
+            for key in y:
+                key = int(key)
+                statistics_dict[key] = statistics_dict.get(key, 0) + 1
+            # print("label statistics: ", statistics_dict)
+            print(f"[Train] Epoch {epoch} Step {step}/{step_total} Loss {loss} Auc {auc_step}")
+
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
+        scheduler.step()
     return loss_total, np.mean(auc)
 
 
@@ -209,7 +121,7 @@ def ndcgk_precision_sensitivity(actual, prediction, k_int):
     return [k_int, ndcg_at_k,  precision_k, sensitivity_k]
 
 
-def evaluate(model,optimizer,criterion,data_loader,device,epoch):
+def evaluate(model,optimizer,criterion,data_loader,device,year):
     model.eval()
     preds = []
     labels = []
@@ -224,74 +136,159 @@ def evaluate(model,optimizer,criterion,data_loader,device,epoch):
             # preds.extend(pred[:,-1].tolist())
             preds.extend(pred[:,-1,0].tolist())
     preds = [i if i>=0 and i<=1 else 0 for i in preds]
-    # with open(f'res{epoch}.csv', 'w') as f:
-    #     f.write("label,pred\n")
-    #     for i in range(len(labels)):
-    #         f.write(f"{labels[i]},{preds[i]}\n")
+    with open(f'{args.res_dir}/prediction/thres{args.threshold}_year{year}_pred.csv', 'w') as fl:
+         for i in range(len(preds)):
+             fl.write(f"{preds[i]}\n")
 
     return metrics.roc_auc_score(labels,preds), ndcgk_precision_sensitivity(np.array(labels), np.array(preds), int(len(preds) * 0.1))
 
+### Hyperparameter Tuning:https://towardsdatascience.com/a-complete-guide-to-using-tensorboard-with-pytorch-53cb2301e8c3
+def one_fold_validate(year, metric = 'AUC', args=None):
+	df = pd.read_csv(args.data_path)	
+	val_train_dataset = InsiderTrades("train", df, year-4, args=args)
+	val_val_dataset = InsiderTrades("test", df, year-2, args=args)
+	
+	print(f"[Validation] Training Year 2003-{year-4}, dataset length: {len(val_train_dataset)}")
+	print(f"[Validation] Validation Year {year-2}, dataset length: {len(val_val_dataset)}")
+	
+	parameters = dict(
+		train_batch_size	= [2024, 2048, 4096],
+		lr 					= [0.1, 0.01, 0.001, 0.0001, 0.00001],
+		dropout				= [0, 0.1, 0.3, 0.5],
+		test_batch_size		= [1],
+		num_epoch			= [40],
+		lr_sche_step		= [5000]
+	)
+	
+	param_keys   = [k for k in parameters.keys()]
+	param_values = [v for v in parameters.values()]
+	param_range  = list(itertools.product(param_values))
+	param_df 	 = pd.DataFrame(param_range,columns =param_keys)
+	
+	param_df['auc']		= 0
+	param_df['ndcg']	= 0
+	for index, row in param_df.iterrows():
+	
+		i_train_bat_size	= row['train_batch_size']
+		i_lr				= row['lr']
+		i_dropout			= row['dropout']
+		i_test_batch_size	= row['test_batch_size']
+		i_num_epoch			= row['num_epoch']
+		i_lr_sche_step 		= row['lr_sche_step']
+		
+		val_train_loader = DataLoader(
+									dataset		= val_train_dataset,      # 数据，封装进Data.TensorDataset()类的数据
+									batch_size	= i_train_bat_size,      # 每块的大小
+									shuffle		= False,  				 # 要不要打乱数据 (打乱比较好)
+									drop_last	= True,
+									num_workers	= 4
+									)
+		val_val_loader = DataLoader(
+									dataset		= val_val_dataset,      # 数据，封装进Data.TensorDataset()类的数据
+									batch_size	= i_test_batch_size,   # 每块的大小
+									shuffle		= False,                # 要不要打乱数据 (打乱比较好)
+									drop_last	= True,
+									num_workers	= 8
+									)
+	
+		device = torch.device("cuda:0")
 
-def run_one_year(year, fw: SummaryWriter):
-    df = pd.read_csv('20220422_all_insider_trades.csv')
-    train_dataset = InsiderTrades("train", df, year)
-    test_dataset = InsiderTrades("test", df, year+2)
-    print(f"Train dataset length: {len(train_dataset)}")
-    print(f"Test dataset length: {len(test_dataset)}")
+		# criterion = nn.BCELoss()
+		criterion = FocalLoss()
+		model = Model(58, 128, 1, 2, device, dropout=i_dropout)
+		model = model.to(device)
+		optimizer = torch.optim.Adam(model.parameters(), lr=i_lr)
+		scheduler = torch.optim.lr_scheduler.StepLR(optimizer, i_lr_sche_step, 0.1)
+		EPOCHS = i_num_epoch
 
-    batch_size = 256
+		for epoch in range(EPOCHS):
+			loss, auc = train(model,optimizer,scheduler,criterion,val_train_loader,device,epoch,args)
+			print(f"[Validation] Train Average Year {year}, Epoch {epoch}, Loss = {loss}")
+			
+		auc, ndcg_dict = evaluate(model,optimizer,criterion,val_val_loader,device)
+		print(f"[Validation] Evaluate auc = {auc}, ndcg_k = {ndcg_dict[1]}, lr = {optimizer.state_dict()['param_groups'][0]['lr']}")
+		
+		param_df.loc[index, ['auc']] = auc
+		param_df.loc[index, ['ndcg']] = ndcg_dict[1]
+	
+	if metric.lower() == 'auc':
+		paras = param_df.loc[param_df['auc'].idxmax()].to_dict()
+	if metric.lower() == 'ndcg':
+		paras = param_df.loc[param_df['ndcg'].idxmax()].to_dict()
+		
+	return paras
+
+def test(year, fw=SummaryWriter, paras=None, args=None):
+    df = pd.read_csv(args.data_path)
+    train_dataset = InsiderTrades("train", df, year, args=args)
+    test_dataset = InsiderTrades("test", df, year+2, args=args)
+    print(f"[TEST] Training dataset year 2003-{year}, length: {len(train_dataset)}")
+    print(f"[TEST] Testing dataset year {year}, length: {len(test_dataset)}")
+
     train_loader = DataLoader(
-    dataset=train_dataset,
-    batch_size=batch_size,
-    shuffle=True,
-    drop_last=True,
-    num_workers=4
-    )
+							dataset=train_dataset,      # 数据，封装进Data.TensorDataset()类的数据
+							batch_size=paras.train_batch_size,      # 每块的大小
+							shuffle=False,  # 要不要打乱数据 (打乱比较好)
+							drop_last=True,
+							num_workers=4
+							)
     test_loader = DataLoader(
-    dataset=test_dataset,
-    batch_size=1,
-    shuffle=False,
-    drop_last=True,
-    num_workers=8
-    )
-
+							dataset=test_dataset,      # 数据，封装进Data.TensorDataset()类的数据
+							batch_size=paras.test_batch_size,      # 每块的大小
+							shuffle=False,               # 要不要打乱数据 (打乱比较好)
+							drop_last=True,
+							num_workers=8
+							)
     device = torch.device("cuda:0")
 
     # criterion = nn.BCELoss()
     criterion = FocalLoss()
-    model = GRUNet(58, 128, 1, 2, device)
-    model.to(device)
-    optimizer = torch.optim.Adam(model.parameters())
-    EPOCHS = 20
+    model = Model(58, 128, 1, 2, device, dropout=paras.dropout)
+    model = model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=paras.lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, paras.lr_sche_step, 0.1)
+    EPOCHS = paras.num_epoch
+
     for epoch in range(EPOCHS):
-        loss, auc = train(model,optimizer,criterion,train_loader,device)
-        print(f"in epoch {epoch}, loss = {loss}")
+        loss, auc = train(model,optimizer,scheduler,criterion,train_loader,device,epoch,args)
+        print(f"[TEST] Train Average Year {year}, Epoch {epoch}, Loss = {loss}")
         fw.add_scalar(f'year_{year}_train_loss', loss, epoch)
         fw.add_scalar(f'year_{year}_train_auc', auc, epoch)
-        if (epoch + 1) % 1 == 0:  ## 可以删掉吗？
-            auc, ndcg_dict = evaluate(model,optimizer,criterion,test_loader,device, epoch)
-            print(f"auc = {auc}, ndcg_k = {ndcg_dict[1]}")
-            fw.add_scalar(f'year_{year}_test_auc', auc, epoch)
-            fw.add_scalar(f'year_{year}_test_ndcg', ndcg_dict[1], epoch)
-        torch.save({'model': model.state_dict()}, f'ckpt/year{year}_epoch{epoch}.pth')
+        torch.save({'model': model.state_dict()}, args.res_dir + f'/checkpoints/year{year}_epoch{epoch}.pth')
+		
+    auc, ndcg_dict = evaluate(model,optimizer,criterion,test_loader,device, epoch, year)
+    print(f"[TEST] Evaluate auc = {auc}, ndcg_k = {ndcg_dict[1]}, lr = {optimizer.state_dict()['param_groups'][0]['lr']}")
+	#wandb.log({"year": year, "epoch": epoch, "auc": auc, "ndcg_k": ndcg_dict[1], "lr": optimizer.state_dict()['param_groups'][0]['lr'], "loss": loss})
+    fw.add_scalar(f'year_{year}_test_auc', auc, epoch)
+    fw.add_scalar(f'year_{year}_test_ndcg', ndcg_dict[1], epoch)
+        
 
+def init_folders(args):
+	os.makedirs(args.res_dir, exist_ok=False)
+	os.makedirs(args.res_dir + '/checkpoints', exist_ok=False)
+	os.makedirs(args.res_dir + '/figures', exist_ok=False)
+	os.makedirs(args.res_dir + '/validation', exist_ok=False)
+	os.makedirs(args.res_dir + '/prediction', exist_ok=False)
 
-
-def main():
-    # x_train = np.load("data/train_x.npy")
-    # y_train = np.load("data/train_y.npy")
-    # x_test = np.load("data/test_x.npy")
-    # y_test = np.load("data/test_y.npy")
-
-    # assert np.isnan(x_train).any() == False
-
-    # train_dataset = TensorDataset(torch.from_numpy(x_train),torch.from_numpy(y_train))
-    # test_dataset = TensorDataset(torch.tensor(x_test), torch.tensor(y_test))
-    fw = SummaryWriter('thres166_ndcg10/tensorboard')
+def main(args):
+    init_folders(args)
+    fw = SummaryWriter(args.res_dir + '/tensorboard')
     for year in range(2007, 2018):
         print(f"Year: {year}====================================================================================================")
-        run_one_year(year, fw)
+        paras = one_fold_validate(year,'AUC', args)
+        test(year, fw, paras, args)
 
 if __name__=="__main__":
-    #prepare_data()
-    main()
+    parser = argparse.ArgumentParser(description="LSTM_project")    
+    parser.add_argument("--data_path", default="20220422_all_insider_trades.csv", type=str, help="path of dataset")
+    parser.add_argument("--res_dir", default="./InsiderTrading/lstm_results", type=str, help="result directory")    
+    parser.add_argument("--print_freq", default=20, type=int, help="print frequency")    
+    parser.add_argument("--threshold", default=1.66, type=float, help="threshold of adj_t")
+	
+    args = parser.parse_args()
+    print(time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()))
+    args.res_dir = args.res_dir + "_" + time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+
+    print("args", args)
+
+    main(args)
