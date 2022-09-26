@@ -162,18 +162,18 @@ def one_fold_validate(year, metric = 'AUC', args=None):
 	
 	param_keys   = [k for k in parameters.keys()]
 	param_values = [v for v in parameters.values()]
-	param_range  = list(itertools.product(param_values))
+	param_range  = list(itertools.product(*param_values))
 	param_df 	 = pd.DataFrame(param_range,columns =param_keys)
 	
 	param_df['auc']		= 0
 	param_df['ndcg']	= 0
 	for index, row in param_df.iterrows():
 	
-		i_train_bat_size	= row['train_batch_size']
+		i_train_bat_size	= int(row['train_batch_size'])
 		i_lr				= row['lr']
 		i_dropout			= row['dropout']
-		i_test_batch_size	= row['test_batch_size']
-		i_num_epoch			= row['num_epoch']
+		i_test_batch_size	= int(row['test_batch_size'])
+		i_num_epoch			= int(row['num_epoch'])
 		i_lr_sche_step 		= row['lr_sche_step']
 		
 		val_train_loader = DataLoader(
@@ -195,7 +195,7 @@ def one_fold_validate(year, metric = 'AUC', args=None):
 
 		# criterion = nn.BCELoss()
 		criterion = FocalLoss()
-		model = Model(58, 128, 1, 2, device, dropout=i_dropout)
+		model = Model(128, 128, 1, 2, device, dropout=i_dropout)
 		model = model.to(device)
 		optimizer = torch.optim.Adam(model.parameters(), lr=i_lr)
 		scheduler = torch.optim.lr_scheduler.StepLR(optimizer, i_lr_sche_step, 0.1)
@@ -227,14 +227,14 @@ def test(year, fw=SummaryWriter, paras=None, args=None):
 
     train_loader = DataLoader(
 							dataset=train_dataset,      # 数据，封装进Data.TensorDataset()类的数据
-							batch_size=paras.train_batch_size,      # 每块的大小
+							batch_size=int(paras.train_batch_size),      # 每块的大小
 							shuffle=False,  # 要不要打乱数据 (打乱比较好)
 							drop_last=True,
 							num_workers=4
 							)
     test_loader = DataLoader(
 							dataset=test_dataset,      # 数据，封装进Data.TensorDataset()类的数据
-							batch_size=paras.test_batch_size,      # 每块的大小
+							batch_size=int(paras.test_batch_size),      # 每块的大小
 							shuffle=False,               # 要不要打乱数据 (打乱比较好)
 							drop_last=True,
 							num_workers=8
@@ -243,13 +243,13 @@ def test(year, fw=SummaryWriter, paras=None, args=None):
 
     # criterion = nn.BCELoss()
     criterion = FocalLoss()
-    model = Model(58, 128, 1, 2, device, dropout=paras.dropout)
+    model = Model(128, 128, 1, 2, device, dropout=paras.dropout)
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=paras.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, paras.lr_sche_step, 0.1)
     EPOCHS = paras.num_epoch
 
-    for epoch in range(EPOCHS):
+    for epoch in range(int(EPOCHS)):
         loss, auc = train(model,optimizer,scheduler,criterion,train_loader,device,epoch,args)
         print(f"[TEST] Train Average Year {year}, Epoch {epoch}, Loss = {loss}")
         fw.add_scalar(f'year_{year}_train_loss', loss, epoch)
