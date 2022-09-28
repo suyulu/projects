@@ -300,7 +300,7 @@ class InsiderTrades(Dataset):
                     d_l.append(slice_)            
                 d_l += group.values.tolist()                    
             else:
-                for i in range(seq_len, len(group)+1, 1): # we can change the step to speed up
+                for i in range(seq_len, len(group)+1, 10): # we can change the step to speed up
                     ##print("******" + str(i-seq_len) + "*********" +str(i) + "*********" + str(len(group)+1))
                     d_l += group.values.tolist()[i-seq_len: i]
 		
