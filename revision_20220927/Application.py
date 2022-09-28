@@ -46,9 +46,9 @@ test_batch_size = 1
 
 
 parameters = dict(
-  		train_batch_size	= [1024, 2048, 4096],
-  		lr 					= [0.01, 0.001, 0.0001, 0.00001],
-  		dropout				= [0.1, 0.3, 0.5],
+  		train_batch_size	= [2048],
+  		lr 					= [ 0.001, 0.0001, 0.00001],
+  		dropout				= [0.3, 0.5],
   		num_epoch			= [40],
   		lr_sche_step		= [5000]
 	)
