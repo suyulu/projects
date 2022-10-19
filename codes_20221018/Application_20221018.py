@@ -27,12 +27,12 @@ np.random.seed(1425)
 
 
 label_threshold = 0
-sequence_len = 100
+sequence_len = 20
 month_gap = 2           # validation and test period gap, unit: month
-months_length = 60      # 5 years, unit: month
+months_length = 62      # 5 years, unit: month
 
 # Number of steps to unroll
-seq_dim = 100 
+seq_dim = 20 
 
 '''
     LSTM Hyper-Parameters
