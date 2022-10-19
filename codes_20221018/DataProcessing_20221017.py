@@ -24,7 +24,7 @@ from os.path import exists
 label_threshold = 0
 sequence_len = 100
 month_gap = 2           # validation and test period gap, unit: month
-months_length = 60      # 5 years, unit: month
+months_length = 62      # 5 years, unit: month
 
 dimensions = ['index','personid', 'TRANDATE', 'month_order', 'shares', 'price', 
    'year', 'trancode', 'gap', 'profit_rdq_future', ### add three variables
