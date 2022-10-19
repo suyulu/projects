@@ -22,7 +22,7 @@ from os.path import exists
 # =============================================================================
 
 label_threshold = 0
-sequence_len = 100
+sequence_len = 20
 month_gap = 2           # validation and test period gap, unit: month
 months_length = 62      # 5 years, unit: month
 
